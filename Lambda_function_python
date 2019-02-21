@@ -1,0 +1,39 @@
+import json
+import os
+
+import boto3
+
+
+def lambda_handler(event, context):
+    sqs_queue_name = os.getenv('SQS_QUEUE_NAME', '')
+    print("> Queue: {}.".format(sqs_queue_name))
+
+    file_record = event["Records"][0]
+
+    s3_resource = boto3.resource("s3")
+    s3_response = s3_resource.meta.client.get_object(Bucket=file_record["s3"]["bucket"]["name"], Key=file_record["s3"]["object"]["key"])
+    file_content = s3_response['Body'].read().decode('utf-8').strip()
+
+    # Split content into lines, then put to SQS queue
+    put_messages(sqs_queue_name, file_content.split("\n"))
+
+    return "Hello from Lambda"
+
+
+def put_messages(sqs_queue_name, lines):
+    # Initialize sqs queue
+    sqs_resource = boto3.resource("sqs")
+    sqs_queue_url = sqs_resource.meta.client.get_queue_url(QueueName=sqs_queue_name)['QueueUrl']
+
+    try:
+        count = 0
+        for line in lines:
+            sqs_resource.meta.client.send_message(
+                QueueUrl=sqs_queue_url,
+                MessageBody=json.dumps(line.strip())
+            )
+            count += 1
+        print("> Number of messages: %d" % count)
+    except Exception as ex:
+        print("> ERROR: {}".format(ex))
+        raise ex
